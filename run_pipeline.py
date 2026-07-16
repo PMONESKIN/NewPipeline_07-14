@@ -40,10 +40,15 @@ def load_module(module_path: str):
     return mod
 
 
+_no_pause = False
+
 def pause(message: str) -> str:
     print(f"\n{'='*60}")
     print(f"  {message}")
     print(f"{'='*60}")
+    if _no_pause:
+        print("  [--no-pause] Continuing automatically...")
+        return ""
     response = input("\n  Press Enter to continue, or type 'skip' to skip: ").strip()
     return response
 
@@ -57,6 +62,7 @@ def phase_header(phase_num: int, title: str):
 def main():
     parser = argparse.ArgumentParser(description="PeptideScreen — Full Pipeline")
     parser.add_argument("--resume", help="Resume an existing run directory")
+    parser.add_argument("--no-pause", action="store_true", help="Run without human pause points (for Colab/automated runs)")
     parser.add_argument("--skip-md", action="store_true", help="Skip MD stability")
     parser.add_argument("--skip-blast", action="store_true", help="Skip BLAST check")
     parser.add_argument("--fast-only", action="store_true", help="Fast screen only")
@@ -64,6 +70,9 @@ def main():
     parser.add_argument("--md-n", type=int, default=10, help="Top N for MD")
     parser.add_argument("--md-ns", type=float, default=50.0, help="MD length (ns)")
     args = parser.parse_args()
+
+    global _no_pause
+    _no_pause = args.no_pause
 
     from modules.run_manager import RunManager
 
