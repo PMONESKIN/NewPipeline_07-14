@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+*.egg
+
+# Data (large files)
+data/structures/*.pdb
+data/docking/
+data/candidates/*.json
+data/processed/
+!data/**/.gitkeep
+
+# Outputs
+outputs/
+
+# Tools (downloaded binaries)
+tools/ProteinMPNN/
+tools/vina
+
+# OpenMM checkpoints and trajectories
+*.dcd
+*.chk
+checkpoint.xml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+*.env

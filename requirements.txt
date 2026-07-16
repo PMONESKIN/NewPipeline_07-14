@@ -1,0 +1,44 @@
+# PeptideScreen — Open-source peptide discovery pipeline
+# Install with: pip install -r requirements.txt
+#
+# For GPU support (recommended on AWS):
+#   conda install -c conda-forge openmm cudatoolkit
+
+# ── Core ──
+biopython>=1.83
+pandas>=2.2
+pyyaml>=6.0
+requests>=2.31
+numpy>=1.26
+
+# ── Cheminformatics ──
+rdkit>=2022.09
+
+# ── Peptide 3D structure generation ──
+PeptideBuilder>=1.1
+
+# ── Docking (Module 03) ──
+meeko>=0.5                     # PDBQT conversion for AutoDock Vina
+gemmi>=0.6                     # required by meeko
+openbabel-wheel>=3.1           # receptor PDBQT conversion
+# haddock3                     # install separately: pip install haddock3
+                               # requires CNS solver (academic license)
+# AutoDock Vina binary — install separately:
+#   Linux: https://github.com/ccsb-scripps/AutoDock-Vina/releases
+#   Test:  vina --version
+
+# ── MD Simulation (Module 03 — OpenMM) ──
+# openmm>=8.0                  # install via conda: conda install -c conda-forge openmm
+# pdbfixer>=1.9                # install via conda: conda install -c conda-forge pdbfixer
+
+# ── Property prediction (Module 04) ──
+# fair-esm                     # ESM2 embeddings (optional, large model)
+# torch>=2.0                   # required by ESM2 and ProteinMPNN GPU mode
+
+# ── Web interface (Module 06) ──
+streamlit>=1.35
+plotly>=5.20
+
+# ── Dev utilities ──
+jupyter>=1.0
+ipykernel>=6.0

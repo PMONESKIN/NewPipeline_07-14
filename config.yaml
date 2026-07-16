@@ -1,0 +1,50 @@
+project:
+  name: PeptideScreen
+  version: '1.0'
+  description: Computational peptide discovery pipeline.
+targets:
+- name: Nrf2/KEAP1
+  pdb_id: 2FLU
+  receptor_chain: X
+  ligand_chain: P
+  design_chain_length: 16
+  mpnn_temperatures:
+  - 0.1
+  - 0.2
+  - 0.3
+docking:
+  methods:
+  - vina
+  - haddock3
+  vina:
+    exhaustiveness: 8
+    num_modes: 9
+  haddock3:
+    max_candidates: 20
+    sampling:
+      rigidbody: 1000
+      flexref: 200
+      emref: 200
+md_stability:
+  force_field: charmm36
+  temperature_K: 310.15
+  ionic_strength_molar: 0.15
+  default_ns: 10.0
+  checkpoint_interval_ps: 500.0
+  report_interval_ps: 50.0
+candidates:
+  initial_pool: 50
+  final_shortlist: 10
+  length:
+    min: 5
+    max: 30
+  filters:
+    max_molecular_weight: 2500
+    flag_aggregation_prone: true
+outputs:
+  structures: data/structures/
+  candidates: data/candidates/
+  docking: data/docking/
+  processed: data/processed/
+  reports: outputs/reports/
+  figures: outputs/figures/
