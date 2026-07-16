@@ -1,21 +1,16 @@
 """
-Module 05 — Step 4: Properties Report
-=======================================
-Generates a combined markdown report with all property predictions
-for every candidate. No LLM calls — all deterministic.
+Module 05 — Properties Report
+===============================
+Generates combined properties report. All reads from run directory.
 
 Usage:
-    python3 modules/05_properties/properties_report.py
-
-Inputs:
-    data/candidates/candidate_pool.json (with all properties computed)
-
-Outputs:
-    outputs/reports/properties_report.md
+    python3 modules/05_properties/properties_report.py --run-dir path
 """
 
+import argparse
 import json
 import logging
+import sys
 from datetime import date
 from pathlib import Path
 
@@ -25,71 +20,32 @@ log = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def load_config(config_path: str = None) -> dict:
-    import yaml
-    path = Path(config_path) if config_path else ROOT / "config.yaml"
-    with open(path) as f:
-        return yaml.safe_load(f)
-
-
 def fmt(val, decimals=1, suffix=""):
-    """Format a value for display."""
-    if val is None:
-        return "N/A"
-    if isinstance(val, float):
-        return f"{val:.{decimals}f}{suffix}"
+    if val is None: return "N/A"
+    if isinstance(val, float): return f"{val:.{decimals}f}{suffix}"
     return str(val)
 
 
-def generate_report(candidates: list[dict]) -> str:
-    """Generate the full properties report as markdown."""
-    today = date.today().isoformat()
-
-    # Count stats
+def generate_report(candidates):
     total = len(candidates)
-    has_physchem = sum(1 for c in candidates if c.get("physicochemical"))
-    has_protease = sum(1 for c in candidates if c.get("protease_cleavage"))
-    has_perm = sum(1 for c in candidates if c.get("permeability"))
+    unstable = sum(1 for c in candidates if c.get("physicochemical", {}).get("is_unstable"))
+    high_protease = sum(1 for c in candidates if c.get("protease_cleavage", {}).get("protease_risk") == "high")
+    needs_delivery = sum(1 for c in candidates if c.get("permeability", {}).get("overall_permeability") == "needs_delivery_system")
 
-    unstable = sum(
-        1 for c in candidates
-        if c.get("physicochemical", {}).get("is_unstable")
-    )
-
-    high_protease = sum(
-        1 for c in candidates
-        if c.get("protease_cleavage", {}).get("protease_risk") == "high"
-    )
-
-    needs_delivery = sum(
-        1 for c in candidates
-        if c.get("permeability", {}).get("overall_permeability") == "needs_delivery_system"
-    )
-
-    sections = []
-
-    # Header
-    sections.append(f"""# PeptideScreen — Properties Report
-
-**Date:** {today}
-**Candidates:** {total}
-
----
-
-## Summary
-
-| Property | Computed | Key Finding |
-|----------|---------|-------------|
-| Physicochemical | {has_physchem}/{total} | {unstable} predicted unstable (instability index > 40) |
-| Protease stability | {has_protease}/{total} | {high_protease} high cleavage risk |
-| Permeability | {has_perm}/{total} | {needs_delivery} need delivery system |
-
----
-
-## Candidate Properties Table
-
-| ID | Seq | MW | Charge | pI | GRAVY | Stable? | Protease Risk | Perm Category |
-|----|-----|---:|-------:|---:|------:|---------|---------------|---------------|""")
+    lines = [
+        f"# PeptideScreen — Properties Report",
+        f"**Date:** {date.today()} | **Candidates:** {total}",
+        "",
+        "## Summary",
+        f"- Unstable (index > 40): {unstable}/{total}",
+        f"- High protease risk: {high_protease}/{total}",
+        f"- Needs delivery system: {needs_delivery}/{total}",
+        "",
+        "## All Candidates",
+        "",
+        "| ID | Seq | MW | Charge | Stable? | Protease | Permeability |",
+        "|----|-----|---:|-------:|---------|----------|-------------|",
+    ]
 
     for c in candidates:
         seq = c["sequence"][:15] + ".." if len(c["sequence"]) > 15 else c["sequence"]
@@ -99,91 +55,35 @@ def generate_report(candidates: list[dict]) -> str:
 
         mw = fmt(pc.get("molecular_weight_da"), 0)
         charge = fmt(pc.get("net_charge_ph74"), 1)
-        pi = fmt(pc.get("isoelectric_point"), 1)
-        gravy = fmt(pc.get("gravy"), 2)
-        stable = "yes" if not pc.get("is_unstable") else "**NO**"
-        prot_risk = pr.get("protease_risk", "?")
+        stable = "yes" if pc and not pc.get("is_unstable") else ("**NO**" if pc else "?")
+        prot = pr.get("protease_risk", "?")
         perm = pm.get("mw_category", "?")
 
-        sections.append(
-            f"| {c['id']} | `{seq}` | {mw} | {charge} | {pi} | {gravy} | {stable} | {prot_risk} | {perm} |"
-        )
+        lines.append(f"| {c['id']} | `{seq}` | {mw} | {charge} | {stable} | {prot} | {perm} |")
 
-    # Protease details for high-risk candidates
-    high_risk = [c for c in candidates if c.get("protease_cleavage", {}).get("protease_risk") == "high"]
-    if high_risk:
-        sections.append(f"\n---\n\n## High Protease Risk Candidates\n")
-        for c in high_risk:
-            cl = c["protease_cleavage"]
-            sections.append(f"### {c['id']}: `{c['sequence']}`\n")
-            sections.append(f"Total cleavage sites: {cl['total_cleavage_sites']}\n")
-
-            for protease, data in cl["proteases"].items():
-                if data["count"] > 0:
-                    sites_str = ", ".join(
-                        f"pos {s['position']} ({s['residue']})" for s in data["sites"]
-                    )
-                    sections.append(f"- **{protease}** ({data['count']}): {sites_str}")
-
-            if c.get("protease_suggestions"):
-                sections.append(f"\n**Suggested fixes:**")
-                for s in c["protease_suggestions"][:5]:
-                    sections.append(f"- {s}")
-
-            sections.append("")
-
-    # Methodology
-    sections.append(f"""
----
-
-## Methodology
-
-**Physicochemical:** Biopython ProtParam (deterministic, matches ExPASy)
-
-**Protease stability:** Rule-based P1 position matching for trypsin (K/R),
-chymotrypsin (F/Y/W), and elastase (A/V/S/G/T). Does not consider 3D structure.
-Use as a flag for review — D-amino acid substitution at flagged positions
-can improve resistance.
-
-**Permeability:** MW-based categories (Bos & Meinardi 500 Da rule) with
-charge and hydrophobicity modifiers. Low confidence — experimental PAMPA
-or Caco-2 assays required for validation.
-
----
-
-*Generated by PeptideScreen Module 05*
-""")
-
-    return "\n".join(sections)
+    lines.append(f"\n---\n*Generated by PeptideScreen Module 05*")
+    return "\n".join(lines)
 
 
-def run(config_path: str = None) -> None:
-    """Generate properties report."""
-    config = load_config(config_path)
-    candidates_dir = Path(config["outputs"]["candidates"])
-    reports_dir = Path(config["outputs"]["reports"])
-    reports_dir.mkdir(parents=True, exist_ok=True)
+def run(run_dir: str) -> None:
+    sys.path.insert(0, str(ROOT))
+    from modules.run_manager import RunManager
 
-    pool_path = candidates_dir / "candidate_pool.json"
-    if not pool_path.exists():
-        log.error("candidate_pool.json not found.")
-        return
+    rm = RunManager(run_dir=run_dir)
+    candidates = rm.load_candidates()
 
-    with open(pool_path) as f:
-        candidates = json.load(f)
-
-    # Check that properties have been computed
-    has_props = sum(1 for c in candidates if c.get("physicochemical"))
-    if has_props == 0:
-        log.error("No properties computed. Run physicochemical.py first.")
+    if not candidates:
+        log.error("No candidates found.")
         return
 
     report = generate_report(candidates)
-    report_path = reports_dir / "properties_report.md"
+    report_path = rm.reports_dir / "properties_report.md"
     report_path.write_text(report)
-
-    log.info(f"Properties report saved to {report_path}")
+    log.info(f"Properties report → {report_path}")
 
 
 if __name__ == "__main__":
-    run()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--run-dir", required=True)
+    args = parser.parse_args()
+    run(run_dir=args.run_dir)
