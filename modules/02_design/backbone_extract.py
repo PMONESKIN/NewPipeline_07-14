@@ -59,9 +59,19 @@ def extract_binding_region(pdb_path: Path, ligand_chain: str, receptor_chain: st
     if fixed_motif and fixed_motif in seq:
         motif_start = seq.index(fixed_motif)
         motif_center = motif_start + len(fixed_motif) // 2
+        log.info(f"  Centering on motif '{fixed_motif}' at position {motif_start+1}")
     else:
-        # Center on middle of chain
-        motif_center = full_length // 2
+        # Try to find common binding motifs automatically
+        for common_motif in ["ETGE", "DLG", "DPETGE", "DPSTGE"]:
+            if common_motif in seq:
+                motif_start = seq.index(common_motif)
+                motif_center = motif_start + len(common_motif) // 2
+                log.info(f"  Auto-detected motif '{common_motif}' at position {motif_start+1}")
+                break
+        else:
+            # Center on middle of chain
+            motif_center = full_length // 2
+            log.info(f"  No motif found — centering on middle of chain")
 
     # Calculate extraction window centered on motif
     half = target_length // 2
