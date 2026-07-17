@@ -25,7 +25,8 @@ def blast_sequence(sequence, max_hits=5):
     try:
         result_handle = NCBIWWW.qblast("blastp", "swissprot", sequence,
                                         hitlist_size=max_hits, expect=10.0,
-                                        word_size=2, matrix_name="PAM30")
+                                        word_size=2, matrix_name="PAM30",
+                                        gapcosts="9 1")
         blast_record = next(NCBIXML.parse(result_handle))
 
         hits = []
