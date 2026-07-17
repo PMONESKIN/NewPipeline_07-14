@@ -2,25 +2,23 @@
 """
 PeptideScreen — Master Pipeline Runner
 ========================================
-Runs the COMPLETE pipeline from PDB fetch through final report.
-Every step reads/writes through the run directory — single data path.
+State-of-the-art peptide discovery pipeline.
+
+Flow:
+  Phase 0: Target Setup (fetch PDB, analyze interface)
+  Phase 1: Backbone (extract from PDB or RFdiffusion)
+  Phase 2: Design (ProteinMPNN + candidate pool)
+  Phase 3: AF2-Multimer Filter (predict complex, filter by ipTM/pLDDT/PAE)
+  Phase 4: HADDOCK3 Full Docking (on AF2-validated candidates only)
+  Phase 5: Modification (CPP tags, D-amino acids, redock)
+  Phase 6: Properties (physicochemical, protease, permeability)
+  Phase 7: MD Stability (OpenMM, optional)
+  Phase 8: Final Report
 
 Usage:
-    python3 run_pipeline.py                         # full pipeline
-    python3 run_pipeline.py --skip-md               # skip MD (run on Colab)
-    python3 run_pipeline.py --skip-blast            # skip BLAST (slow)
-    python3 run_pipeline.py --resume <run_dir>      # resume existing run
-    python3 run_pipeline.py --fast-only             # fast screen only
-
-Pipeline:
-    Phase 0: Setup       — fetch PDB, analyze interface
-    Phase 1: Design      — ProteinMPNN + fold + BLAST
-    Phase 2: Fast Screen — HADDOCK3 rigidbody (all candidates)
-    Phase 3: Full Dock   — HADDOCK3 full (top N)
-    Phase 4: Modify      — CPP tags, D-amino acids, etc. + redock
-    Phase 5: Properties  — physicochemical + protease + permeability
-    Phase 6: MD          — OpenMM stability (optional)
-    Phase 7: Report      — final ranked report
+    python3 run_pipeline.py --no-pause
+    python3 run_pipeline.py --no-pause --use-rfdiffusion --peptide-length 8
+    python3 run_pipeline.py --resume <run_dir>
 """
 
 import argparse
@@ -31,6 +29,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
+_no_pause = False
+
 
 def load_module(module_path: str):
     full_path = ROOT / module_path
@@ -39,8 +39,6 @@ def load_module(module_path: str):
     spec.loader.exec_module(mod)
     return mod
 
-
-_no_pause = False
 
 def pause(message: str) -> str:
     print(f"\n{'='*60}")
@@ -62,14 +60,17 @@ def phase_header(phase_num: int, title: str):
 def main():
     parser = argparse.ArgumentParser(description="PeptideScreen — Full Pipeline")
     parser.add_argument("--resume", help="Resume an existing run directory")
-    parser.add_argument("--no-pause", action="store_true", help="Run without human pause points (for Colab/automated runs)")
+    parser.add_argument("--no-pause", action="store_true", help="Run without pause points")
     parser.add_argument("--skip-md", action="store_true", help="Skip MD stability")
     parser.add_argument("--skip-blast", action="store_true", help="Skip BLAST check")
-    parser.add_argument("--fast-only", action="store_true", help="Fast screen only")
-    parser.add_argument("--screen-n", type=int, default=None, help="Limit fast screen to N candidates (default: all)")
-    parser.add_argument("--haddock-n", type=int, default=20, help="Top N for full validation")
-    parser.add_argument("--md-n", type=int, default=10, help="Top N for MD")
-    parser.add_argument("--md-ns", type=float, default=50.0, help="MD length (ns)")
+    parser.add_argument("--use-rfdiffusion", action="store_true", help="Use RFdiffusion for backbone generation")
+    parser.add_argument("--peptide-length", type=int, default=None, help="Target peptide length (for backbone extraction)")
+    parser.add_argument("--n-backbones", type=int, default=100, help="Number of RFdiffusion backbones")
+    parser.add_argument("--haddock-n", type=int, default=None, help="Limit HADDOCK3 to top N AF2-passed candidates")
+    parser.add_argument("--md-n", type=int, default=5, help="Top N for MD stability")
+    parser.add_argument("--md-ns", type=float, default=50.0, help="MD simulation length (ns)")
+    parser.add_argument("--iptm-cutoff", type=float, default=0.7, help="AF2 ipTM filter threshold")
+    parser.add_argument("--plddt-cutoff", type=float, default=80.0, help="AF2 pLDDT filter threshold")
     args = parser.parse_args()
 
     global _no_pause
@@ -77,6 +78,9 @@ def main():
 
     from modules.run_manager import RunManager
 
+    # ================================================================
+    # CREATE OR RESUME RUN
+    # ================================================================
     if args.resume:
         rm = RunManager(run_dir=args.resume)
     else:
@@ -85,8 +89,9 @@ def main():
     run_dir = str(rm.run_dir)
 
     print(f"\n{'='*60}")
-    print(f"  PeptideScreen Pipeline")
+    print(f"  PeptideScreen Pipeline v2.0")
     print(f"  Run: {rm.run_dir.name}")
+    print(f"  Directory: {run_dir}")
     print(f"{'='*60}")
 
     # ================================================================
@@ -105,11 +110,37 @@ def main():
     rm.update_status("targets_ready")
 
     # ================================================================
-    # PHASE 1: DESIGN
+    # PHASE 1: BACKBONE GENERATION
     # ================================================================
-    phase_header(1, "Peptide Design")
+    phase_header(1, "Backbone Generation")
 
-    # Check if ProteinMPNN is set up
+    if args.use_rfdiffusion:
+        print("--- RFdiffusion backbone generation ---")
+        response = pause(f"Generate {args.n_backbones} diverse backbones with RFdiffusion?")
+        if response.lower() != "skip":
+            try:
+                rfdiff = load_module("modules/02_design/rfdiffusion_backbones.py")
+                length = args.peptide_length or 8
+                rfdiff.run(run_dir=run_dir, n_backbones=args.n_backbones,
+                          peptide_length=length)
+            except Exception as e:
+                print(f"  RFdiffusion failed: {e}")
+                print("  Falling back to co-crystal backbone extraction...")
+                backbone = load_module("modules/02_design/backbone_extract.py")
+                backbone.run(run_dir=run_dir, length=args.peptide_length)
+    else:
+        print("--- Extracting backbone from co-crystal structure ---")
+        backbone = load_module("modules/02_design/backbone_extract.py")
+        backbone.run(run_dir=run_dir, length=args.peptide_length)
+
+    rm.update_status("backbone_ready")
+
+    # ================================================================
+    # PHASE 2: SEQUENCE DESIGN
+    # ================================================================
+    phase_header(2, "Sequence Design (ProteinMPNN)")
+
+    # Check ProteinMPNN setup
     mpnn_dir = ROOT / "tools" / "ProteinMPNN"
     if not mpnn_dir.exists():
         print("--- Setting up ProteinMPNN (one-time) ---")
@@ -124,13 +155,9 @@ def main():
     pool = load_module("modules/02_design/candidate_pool.py")
     pool.run(run_dir=run_dir)
 
-    print("\n--- Generating 3D structures ---")
-    fold = load_module("modules/02_design/fold_peptides.py")
-    fold.run(run_dir=run_dir)
-
-    # BLAST (optional)
+    # BLAST check (optional)
     if not args.skip_blast:
-        response = pause("Run BLAST sequence check? (~1 hour)")
+        response = pause("Run BLAST sequence check? (~30 sec per candidate)")
         if response.lower() != "skip":
             print("\n--- BLAST check ---")
             blast = load_module("modules/02_design/blast_check.py")
@@ -141,52 +168,73 @@ def main():
     rm.update_status("design_complete")
 
     # ================================================================
-    # PHASE 2: FAST SCREEN
+    # PHASE 3: AF2-MULTIMER FILTER
     # ================================================================
-    response = pause("Start HADDOCK3 fast screen? (all candidates, ~3 min each)")
-    if response.lower() != "skip":
-        phase_header(2, "HADDOCK3 Fast Screen")
+    phase_header(3, "AF2-Multimer Structure Prediction + Filter")
 
+    print("--- Running ColabFold (AlphaFold2-Multimer) ---")
+    print("--- This predicts complex structure and filters by ipTM/pLDDT/PAE ---")
+
+    af2 = load_module("modules/03_docking/af2_filter.py")
+    af2.run(run_dir=run_dir, iptm_cutoff=args.iptm_cutoff,
+            plddt_cutoff=args.plddt_cutoff)
+
+    # Check how many passed
+    candidates = rm.load_candidates()
+    passed = [c for c in candidates if c.get("af2_pass")]
+    print(f"\n  AF2 filter: {len(passed)}/{len(candidates)} candidates passed")
+
+    if not passed:
+        print("\n  WARNING: No candidates passed AF2 filter!")
+        print("  Consider lowering thresholds: --iptm-cutoff 0.5 --plddt-cutoff 60")
+        response = pause("Continue anyway with all candidates?")
+        if response.lower() == "skip":
+            print("  Pipeline stopped.")
+            return
+
+    # ================================================================
+    # PHASE 4: HADDOCK3 FULL DOCKING
+    # ================================================================
+    phase_header(4, "HADDOCK3 Full Docking (AF2-validated candidates)")
+
+    # Only dock candidates that passed AF2 filter
+    n_to_dock = args.haddock_n or len(passed)
+
+    response = pause(f"Run HADDOCK3 full docking on {min(n_to_dock, len(passed))} AF2-validated candidates?")
+    if response.lower() != "skip":
         haddock = load_module("modules/03_docking/haddock3_dock.py")
-        haddock.run(run_dir=run_dir, mode="fast", n=args.screen_n)
+
+        # Mark non-AF2-passed candidates so HADDOCK skips them
+        for c in candidates:
+            if not c.get("af2_pass"):
+                c["haddock_full_score"] = None  # ensure they're skipped
+
+        rm.save_candidates(candidates)
+        haddock.run(run_dir=run_dir, mode="full", n=n_to_dock)
 
         ranking = load_module("modules/03_docking/score_ranking.py")
-        ranking.run(run_dir=run_dir, mode="fast")
+        ranking.run(run_dir=run_dir, mode="full")
 
     # ================================================================
-    # PHASE 3: FULL VALIDATION
-    # ================================================================
-    if not args.fast_only:
-        response = pause(f"Run HADDOCK3 full validation on top {args.haddock_n}?")
-        if response.lower() != "skip":
-            phase_header(3, "HADDOCK3 Full Validation")
-
-            haddock = load_module("modules/03_docking/haddock3_dock.py")
-            haddock.run(run_dir=run_dir, mode="full", n=args.haddock_n)
-
-            ranking = load_module("modules/03_docking/score_ranking.py")
-            ranking.run(run_dir=run_dir, mode="full")
-
-    # ================================================================
-    # PHASE 4: MODIFICATION
+    # PHASE 5: MODIFICATION
     # ================================================================
     response = pause("Enter modification phase? (add CPP tags, D-amino acids, etc.)")
     if response.lower() != "skip":
-        phase_header(4, "Peptide Modification")
+        phase_header(5, "Peptide Modification")
 
         modify = load_module("modules/04_modification/modify_peptides.py")
         modified = modify.run(run_dir=run_dir)
 
         if modified:
-            response = pause("Re-dock modified candidates?")
+            response = pause("Re-dock modified candidates through HADDOCK3?")
             if response.lower() != "skip":
                 redock = load_module("modules/04_modification/redock_modified.py")
-                redock.run(run_dir=run_dir, mode="fast")
+                redock.run(run_dir=run_dir, mode="full")
 
     # ================================================================
-    # PHASE 5: PROPERTIES
+    # PHASE 6: PROPERTIES
     # ================================================================
-    phase_header(5, "Property Prediction")
+    phase_header(6, "Property Prediction")
 
     print("--- Physicochemical ---")
     physchem = load_module("modules/05_properties/physicochemical.py")
@@ -205,26 +253,25 @@ def main():
     prop_report.run(run_dir=run_dir)
 
     # ================================================================
-    # PHASE 6: MD STABILITY
+    # PHASE 7: MD STABILITY
     # ================================================================
     if not args.skip_md:
         response = pause(f"Run MD stability? (top {args.md_n}, {args.md_ns} ns each)")
         if response.lower() != "skip":
-            phase_header(6, "MD Stability (OpenMM)")
+            phase_header(7, "MD Stability (OpenMM)")
             try:
                 md = load_module("modules/03_docking/md_stability.py")
                 md.run(run_dir=run_dir, n=args.md_n, ns=args.md_ns)
             except Exception as e:
                 print(f"  MD skipped: {e}")
-                print("  Run on Colab with OPENMM_V2.ipynb instead.")
+                print("  Run on Colab with OPENMM_V2.ipynb for GPU acceleration.")
     else:
-        print(f"\n  MD skipped (--skip-md). Run on Colab with OPENMM_V2.ipynb")
-        print(f"  Candidates at: {run_dir}/candidates/candidate_pool.json")
+        print(f"\n  MD skipped (--skip-md). Run separately if needed.")
 
     # ================================================================
-    # PHASE 7: FINAL REPORT
+    # PHASE 8: FINAL REPORT
     # ================================================================
-    phase_header(7, "Final Report")
+    phase_header(8, "Final Report")
 
     report = load_module("modules/03_docking/docking_report.py")
     report.run(run_dir=run_dir)
@@ -240,7 +287,6 @@ def main():
     print(f"  Reports:")
     print(f"    {run_dir}/reports/docking_report.md")
     print(f"    {run_dir}/reports/properties_report.md")
-    print(f"    {run_dir}/reports/shortlist.json")
     print(f"  Resume: python3 run_pipeline.py --resume {run_dir}")
     print(f"{'='*60}\n")
 

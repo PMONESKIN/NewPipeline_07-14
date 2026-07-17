@@ -292,13 +292,22 @@ def run(run_dir: str, mode: str = "fast", n: int = None) -> list[dict]:
     haddock_cfg = config.get("docking", {}).get("haddock3", {})
     sampling = haddock_cfg.get("sampling", {})
 
-    # For full mode, select top N by fast screen score
+    # Select candidates to dock
     if mode == "full":
-        n = n or haddock_cfg.get("max_candidates", 20)
-        scored = [c for c in candidates if c.get("haddock_fast_score") is not None]
-        scored.sort(key=lambda c: c["haddock_fast_score"])
-        to_dock = scored[:n]
-        log.info(f"FULL mode: docking top {len(to_dock)} candidates from fast screen")
+        # Prefer AF2-filtered candidates, fall back to fast screen
+        af2_passed = [c for c in candidates if c.get("af2_pass")]
+        if af2_passed:
+            # Sort by ipTM (best first)
+            af2_passed.sort(key=lambda c: c.get("af2_iptm", 0), reverse=True)
+            to_dock = af2_passed[:n] if n else af2_passed
+            log.info(f"FULL mode: docking {len(to_dock)} AF2-validated candidates")
+        else:
+            # Fall back to fast screen scores
+            scored = [c for c in candidates if c.get("haddock_fast_score") is not None]
+            scored.sort(key=lambda c: c["haddock_fast_score"])
+            n = n or haddock_cfg.get("max_candidates", 20)
+            to_dock = scored[:n]
+            log.info(f"FULL mode: docking top {len(to_dock)} by fast screen (no AF2 data)")
     else:
         to_dock = candidates if n is None else candidates[:n]
         log.info(f"FAST mode: screening {len(to_dock)} candidates")
