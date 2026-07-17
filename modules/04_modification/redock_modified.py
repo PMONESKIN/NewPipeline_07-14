@@ -66,8 +66,7 @@ def run(run_dir: str, mode: str = "fast") -> list[dict]:
     # Prepare receptor
     target_cfg = config["targets"][0]
     interface = rm.load_interface(target_cfg["name"])
-    structures_dir = ROOT / config["outputs"]["structures"]
-    pdb_path = structures_dir / f"{interface['pdb_id']}.pdb"
+    pdb_path = rm.structures_dir / f"{interface['pdb_id']}.pdb"
 
     receptor_dir = rm.docking_dir / "receptor"
     receptor_dir.mkdir(parents=True, exist_ok=True)
@@ -77,7 +76,7 @@ def run(run_dir: str, mode: str = "fast") -> list[dict]:
         log.info(f"Extracting receptor chain {interface['receptor_chain']}...")
         h3.extract_receptor_pdb(pdb_path, interface["receptor_chain"], receptor_pdb)
 
-    folded_dir = ROOT / config["outputs"]["candidates"] / "folded_structures"
+    folded_dir = rm.folded_dir
     haddock_dir = rm.docking_dir / "haddock3_modified"
     haddock_dir.mkdir(parents=True, exist_ok=True)
 

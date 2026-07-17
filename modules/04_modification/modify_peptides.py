@@ -114,10 +114,9 @@ def apply_truncation(sequence: str, start: int, end: int) -> str:
     return sequence[start - 1:end]
 
 
-def interactive_modify(candidates: list[dict], run_dir: Path) -> list[dict]:
+def interactive_modify(candidates: list[dict], run_dir: Path, folded_dir: Path) -> list[dict]:
     """Interactive modification session."""
     modified = []
-    folded_dir = ROOT / "data" / "candidates" / "folded_structures"
     folded_dir.mkdir(parents=True, exist_ok=True)
 
     print("\n=== Peptide Modification ===")
@@ -246,7 +245,7 @@ def run(run_dir: str) -> list[dict]:
     rm = RunManager(run_dir=run_dir)
     candidates = rm.load_candidates()
 
-    modified = interactive_modify(candidates, rm.run_dir)
+    modified = interactive_modify(candidates, rm.run_dir, rm.folded_dir)
 
     if modified:
         # Save modified candidates

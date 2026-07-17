@@ -309,7 +309,7 @@ def run(run_dir: str, n: int = 10, ns: float = 50.0, resume: bool = False) -> li
     target_cfg = config["targets"][0]
     interface = rm.load_interface(target_cfg["name"])
     receptor_pdb = rm.docking_dir / "receptor" / f"{interface['pdb_id']}_receptor.pdb"
-    folded_dir = ROOT / config["outputs"]["candidates"] / "folded_structures"
+    folded_dir = rm.folded_dir
 
     if not receptor_pdb.exists():
         log.error(f"Receptor PDB not found: {receptor_pdb}")

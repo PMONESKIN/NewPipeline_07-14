@@ -310,8 +310,7 @@ def run(run_dir: str, mode: str = "fast", n: int = None) -> list[dict]:
     # Prepare receptor PDB
     target_cfg = config["targets"][0]  # first target
     interface = rm.load_interface(target_cfg["name"])
-    structures_dir = ROOT / config["outputs"]["structures"]
-    pdb_path = structures_dir / f"{interface['pdb_id']}.pdb"
+    pdb_path = rm.structures_dir / f"{interface['pdb_id']}.pdb"
 
     receptor_dir = rm.docking_dir / "receptor"
     receptor_dir.mkdir(parents=True, exist_ok=True)
@@ -322,7 +321,7 @@ def run(run_dir: str, mode: str = "fast", n: int = None) -> list[dict]:
         extract_receptor_pdb(pdb_path, interface["receptor_chain"], receptor_pdb)
 
     # Folded structures directory
-    folded_dir = ROOT / config["outputs"]["candidates"] / "folded_structures"
+    folded_dir = rm.folded_dir
     if not folded_dir.exists():
         log.error(f"Folded structures not found at {folded_dir}. Run fold_peptides.py first.")
         return candidates
