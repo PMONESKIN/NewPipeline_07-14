@@ -66,6 +66,7 @@ def main():
     parser.add_argument("--skip-md", action="store_true", help="Skip MD stability")
     parser.add_argument("--skip-blast", action="store_true", help="Skip BLAST check")
     parser.add_argument("--fast-only", action="store_true", help="Fast screen only")
+    parser.add_argument("--screen-n", type=int, default=None, help="Limit fast screen to N candidates (default: all)")
     parser.add_argument("--haddock-n", type=int, default=20, help="Top N for full validation")
     parser.add_argument("--md-n", type=int, default=10, help="Top N for MD")
     parser.add_argument("--md-ns", type=float, default=50.0, help="MD length (ns)")
@@ -147,7 +148,7 @@ def main():
         phase_header(2, "HADDOCK3 Fast Screen")
 
         haddock = load_module("modules/03_docking/haddock3_dock.py")
-        haddock.run(run_dir=run_dir, mode="fast")
+        haddock.run(run_dir=run_dir, mode="fast", n=args.screen_n)
 
         ranking = load_module("modules/03_docking/score_ranking.py")
         ranking.run(run_dir=run_dir, mode="fast")
