@@ -109,7 +109,7 @@ def energy_minimize(pdb_path: Path, output_path: Path, steps: int = 500) -> Path
     Uses OpenMM if available, otherwise skips minimization.
     """
     try:
-        from openmm.app import PDBFile, ForceField, Modeller, Simulation
+        from openmm.app import PDBFile, ForceField, Modeller, Simulation, NoCutoff, HBonds
         from openmm import LangevinMiddleIntegrator
         from openmm import unit
         from pdbfixer import PDBFixer
@@ -123,13 +123,14 @@ def energy_minimize(pdb_path: Path, output_path: Path, steps: int = 500) -> Path
         fixer.addMissingHydrogens(pH=7.4)
         fixer.removeHeterogens(keepWater=False)
 
-        forcefield = ForceField("charmm36.xml", "charmm36/water.xml")
+        # Use implicit solvent for in-vacuum minimization (no periodic box needed)
+        forcefield = ForceField("charmm36.xml", "implicit/gbn2.xml")
         modeller = Modeller(fixer.topology, fixer.positions)
 
         system = forcefield.createSystem(
             modeller.topology,
-            nonbondedMethod=0,  # NoCutoff for in-vacuum minimization
-            constraints=2,  # HBonds
+            nonbondedMethod=NoCutoff,
+            constraints=HBonds,
         )
 
         integrator = LangevinMiddleIntegrator(
