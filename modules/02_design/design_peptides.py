@@ -103,7 +103,19 @@ def run_proteinmpnn(pdb_path, output_dir, fixed_chains, design_chains,
         cmd.append(device_flag)
 
     log.info(f"  Running ProteinMPNN ({num_sequences} seqs x {len(temperatures)} temps)...")
-    subprocess.run(cmd, capture_output=True, text=True, check=True)
+    result = subprocess.run(cmd, capture_output=True, text=True)
+
+    if result.returncode != 0:
+        # If GPU failed, retry on CPU
+        if device_flag and "--use_gpu" in cmd:
+            log.warning(f"  GPU failed, retrying on CPU...")
+            log.warning(f"  Error: {result.stderr[:200]}")
+            cmd.remove("--use_gpu")
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise RuntimeError(f"ProteinMPNN failed on CPU too:\n{result.stderr[:500]}")
+        else:
+            raise RuntimeError(f"ProteinMPNN failed:\n{result.stderr[:500]}")
 
     fasta_files = list((output_dir / "seqs").glob("*.fa"))
     if not fasta_files:
