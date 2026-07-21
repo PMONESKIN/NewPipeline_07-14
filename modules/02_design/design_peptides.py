@@ -184,9 +184,19 @@ def run(run_dir: str) -> list[dict]:
         name = target_cfg["name"]
         try:
             interface = rm.load_interface(name)
-            pdb_path = Path(interface["pdb_path"])
-            if not pdb_path.exists():
-                pdb_path = rm.structures_dir / f"{interface['pdb_id']}.pdb"
+            # Use extracted/minimized backbone if available (from backbone_extract.py)
+            # Otherwise fall back to original PDB
+            if interface.get("minimized_pdb") and Path(interface["minimized_pdb"]).exists():
+                pdb_path = Path(interface["minimized_pdb"])
+                log.info(f"  Using extracted backbone: {pdb_path.name}")
+            elif interface.get("extracted_pdb") and Path(interface["extracted_pdb"]).exists():
+                pdb_path = Path(interface["extracted_pdb"])
+                log.info(f"  Using extracted backbone: {pdb_path.name}")
+            else:
+                pdb_path = Path(interface["pdb_path"])
+                if not pdb_path.exists():
+                    pdb_path = rm.structures_dir / f"{interface['pdb_id']}.pdb"
+                log.info(f"  Using original PDB: {pdb_path.name}")
 
             fixed_motif = interface.get("fixed_motif")
             fixed_positions = None
